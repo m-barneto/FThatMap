@@ -2,6 +2,9 @@
     "name": "fthatmap",
     "version": "1.0.0",
     "sptVersion": "~3.9",
+    "author": "Mattdokn",
+    "contributors": [],
+    "license": "MIT",
     "loadBefore": [],
     "loadAfter": [],
     "incompatibilities": [],
@@ -24,7 +27,7 @@
         "typescript": "5.4",
         "winston": "3.12"
     },
-    "author": "Mattdokn",
-    "contributors": [],
-    "license": "MIT"
+    "dependencies": {
+        "jsonc": "^2.0.0"
+    }
 }

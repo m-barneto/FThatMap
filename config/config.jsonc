@@ -1,0 +1,20 @@
+{
+    // Possible map names:
+    // customs ->           bigmap
+    // Factory ->           factory4_day
+    // Factory ->           factory4_night
+    // Interchange ->       interchange
+    // Labs ->              laboratory
+    // Lighthouse ->        lighthouse
+    // Reserve ->           rezervbase
+    // Shoreline ->         shoreline
+    // Woods ->             woods
+    // Streets ->           tarkovstreets
+    // Ground Zero ->       sandbox
+    // Ground Zero 21+ ->   sandbox_high
+    "RemoveQuestsOnMaps": [
+        "tarkovstreets",
+        "sandbox",
+        "sandbox_high"
+    ]
+}
