@@ -52,9 +52,10 @@ class Mod implements IPostDBLoadMod {
         for (const questId in quests) {
             const quest: IQuest = quests[questId];
             //this.logger.success(`Quest: ${quest.QuestName}`);
-            if (true || quest.location === "any" || mapIdsToRemove.includes(quest.location)) {
+            if (true) { //|| quest.location === "any" || mapIdsToRemove.includes(quest.location)
                 //this.logger.success(`raaaa ${quest.location}`);
                 quest.conditions.AvailableForFinish.forEach(condition => {
+                    this.logger.success(condition.type);
                     if (condition.zoneId) {
                         if (!this.zoneExists(condition.zoneId)) {
                             this.logger.success(`Missing: ${condition.zoneId}`);

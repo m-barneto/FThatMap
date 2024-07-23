@@ -7,12 +7,12 @@
         "expl_zone_dead_posylny",
         "expl_zone_vremyan_case",
         "expl_zone_bomj",
-        "expl_zone_gazel",
+        "gazel",
         "extraction_zone_zibbo",
-        "beacon_zone_fuel1",
-        "beacon_zone_fuel2",
-        "beacon_zone_fuel3",
-        "beacon_zone_fuel4",
+        "fuel1",
+        "fuel2",
+        "fuel3",
+        "fuel4",
         "place_peacemaker_002_N1",
         "place_peacemaker_002_N2",
         "place_peacemaker_002_N3",
@@ -21,7 +21,10 @@
         "place_skier_11_2",
         "sniper",
         "place_skier_12_2",
-        "Q019_3"
+        "Q019_3",
+        "mech_41_1",
+        "mech_41_2",
+        "place_flyers1"
     ],
     "factory4_day": [
         "place_SADOVOD_01_1",
@@ -32,8 +35,7 @@
         "place_pacemaker_SCOUT_04",
         "zone_kill1",
         "huntsman_013",
-        "case_extraction_zone",
-        "case_extraction_placeitem"
+        "case_extraction"
     ],
     "factory4_night": [
         "place_SADOVOD_01_1",
@@ -44,8 +46,7 @@
         "place_pacemaker_SCOUT_04",
         "zone_kill1",
         "huntsman_013",
-        "case_extraction_zone",
-        "case_extraction_placeitem",
+        "case_extraction",
         "ter_017_area_1"
     ],
     "interchange": [
@@ -118,7 +119,11 @@
         "qlight_pr1_heli1_find",
         "qlight_pr1_heli1_mark",
         "qlight_pr1_heli2_kill",
-        "qlight16_peace_terra"
+        "qlight16_peace_terra",
+        "meh_42_radio_area_mark_1",
+        "meh_42_radio_area_mark_2",
+        "meh_42_radio_area_mark_3",
+        "meh_42_radio_area_mark_4"
     ],
     "rezervbase": [
         "quest_zone_keeper3_hide",
@@ -317,7 +322,10 @@
         "prapor_27_4"
     ],
     "tarkovstreets": [
-        
+        "quest_zone_hide_barber1",
+        "quest_zone_hide_barber2",
+        "quest_city_trotil1",
+        "quest_city_trotil2"
     ],
     "woods": [
         "pr_scout_base",
@@ -341,6 +349,11 @@
         "meh_45_radio_area_mark_1",
         "meh_45_radio_area_mark_2",
         "meh_45_radio_area_mark_3",
-        "meh_45_radio_area_mark_4"
+        "meh_45_radio_area_mark_4",
+        "q14_8_1",
+        "q14_8_2",
+        "q14_8_3",
+        "q14_8_4",
+        "q14_8_5"
     ]
 }
