@@ -23,14 +23,13 @@ import { HttpResponseUtil } from "@spt/utils/HttpResponseUtil";
 import { TimeUtil } from "@spt/utils/TimeUtil";
 import { inject, injectable } from "tsyringe";
 import { Mod } from "./mod";
-import { ConfigTypes } from "@spt/models/enums/ConfigTypes";
 
 
 
 @injectable()
 export class QuestControllerExtension extends QuestController {
     constructor(
-        @inject("PrimaryLogger") logger: ILogger, 
+    @inject("PrimaryLogger") logger: ILogger, 
         @inject("TimeUtil") timeUtil: TimeUtil, 
         @inject("HttpResponseUtil") httpResponseUtil: HttpResponseUtil, 
         @inject("EventOutputHolder") eventOutputHolder: EventOutputHolder, 
@@ -70,17 +69,18 @@ export class QuestControllerExtension extends QuestController {
         );
     }
 
-    // override acceptQuest(pmcData: IPmcData, acceptedQuest: IAcceptQuestRequestData, sessionID: string): IItemEventRouterResponse {
-    //     const response = super.acceptQuest(pmcData, acceptedQuest, sessionID);
+    override acceptQuest(pmcData: IPmcData, acceptedQuest: IAcceptQuestRequestData, sessionID: string): IItemEventRouterResponse {
+        const response = super.acceptQuest(pmcData, acceptedQuest, sessionID);
+        this.logger.success("WTF MAN???");
+        //updateProfileTaskConditionCounterValue
+        const quest: IQuest = this.questHelper.getQuestFromDb(acceptedQuest.qid, pmcData);
+        quest.conditions.AvailableForFinish.forEach(condition => {
+            if (typeof condition.value === "number" && Mod.conditionsToSkip.includes(condition.id)) {
+                this.updateProfileTaskConditionCounterValue(pmcData, condition.id, acceptedQuest.qid, condition.value);
+                this.logger.success("FUCKING MODFIED A CONDITION WOOOOOOOOOO");
+            }
+        });
 
-    //     //updateProfileTaskConditionCounterValue
-    //     const quest: IQuest = this.questHelper.getQuestFromDb(acceptedQuest.qid, pmcData);
-    //     quest.conditions.AvailableForFinish.forEach(condition => {
-    //         if (typeof condition.value === "number" && condition.id in Mod.conditionsToSkip) {
-    //             this.updateProfileTaskConditionCounterValue(pmcData, condition.id, acceptedQuest.qid, condition.value);
-    //         }
-    //     });
-
-    //     return response;
-    // }
+        return response;
+    }
 }
