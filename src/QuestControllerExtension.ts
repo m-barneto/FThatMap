@@ -23,6 +23,7 @@ import { HttpResponseUtil } from "@spt/utils/HttpResponseUtil";
 import { TimeUtil } from "@spt/utils/TimeUtil";
 import { inject, injectable } from "tsyringe";
 import { Mod } from "./mod";
+import { QuestStatus } from "@spt/models/enums/QuestStatus";
 
 
 
@@ -70,16 +71,28 @@ export class QuestControllerExtension extends QuestController {
     }
 
     override acceptQuest(pmcData: IPmcData, acceptedQuest: IAcceptQuestRequestData, sessionID: string): IItemEventRouterResponse {
-        const response = super.acceptQuest(pmcData, acceptedQuest, sessionID);
-        this.logger.success("WTF MAN???");
-        //updateProfileTaskConditionCounterValue
+        super.acceptQuest(pmcData, acceptedQuest, sessionID);
+
         const quest: IQuest = this.questHelper.getQuestFromDb(acceptedQuest.qid, pmcData);
         quest.conditions.AvailableForFinish.forEach(condition => {
             if (typeof condition.value === "number" && Mod.conditionsToSkip.includes(condition.id)) {
-                this.updateProfileTaskConditionCounterValue(pmcData, condition.id, acceptedQuest.qid, condition.value);
+                //this.updateProfileTaskConditionCounterValue(pmcData, condition.id, acceptedQuest.qid, condition.value);
                 this.logger.success("FUCKING MODFIED A CONDITION WOOOOOOOOOO");
+                pmcData.TaskConditionCounters[condition.id] = {
+                    id: condition.id,
+                    sourceId: acceptedQuest.qid,
+                    type: "HandoverItem",
+                    value: condition.value
+                };
+        
             }
         });
+
+        const existingQuestStatus = pmcData.Quests.find((x) => x.qid === acceptedQuest.qid);
+
+        const response = super.acceptQuest(pmcData, acceptedQuest, sessionID);
+        
+        response.profileChanges[sessionID].questsStatus.push(existingQuestStatus);
 
         return response;
     }
