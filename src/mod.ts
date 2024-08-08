@@ -4,129 +4,162 @@ import { DatabaseServer } from "@spt/servers/DatabaseServer";
 import { IDatabaseTables } from "@spt/models/spt/server/IDatabaseTables";
 import { VFS } from "@spt/utils/VFS";
 import path from "node:path";
-import { ILocations } from "@spt/models/spt/server/ILocations";
 import { ILocation } from "@spt/models/eft/common/ILocation";
 import { jsonc } from "jsonc";
 import { ILogger } from "@spt/models/spt/utils/ILogger";
 import { IQuest, IQuestCondition } from "@spt/models/eft/common/tables/IQuest";
 import { getZones, Zones } from "./ZoneManager";
-import { IPreSptLoadMod } from "@spt/models/external/IPreSptLoadMod";
-import { QuestControllerExtension } from "./QuestControllerExtension";
 import { IPostDBLoadMod } from "@spt/models/external/IPostDBLoadMod";
 
 interface ModConfig {
     RemoveQuestsOnMaps: string[];
 }
 
-export class Mod implements IPreSptLoadMod, IPostDBLoadMod {
+export class FThatMap implements IPostDBLoadMod {
 
     private modConfig: ModConfig;
     private logger: ILogger;
     private zones: Zones;
     private locale: Record<string, string>;
-    private maps: ILocations;
-    public static conditionsToSkip: string[];
-    private mapIdsToRemove: string[];
+    private maps: Record<string, ILocation>;
+    private mapIdToName: Record<string, string>;
+    private completedConditionIds: string[];
 
     // Associate quest item ids with a location
     private questItemLocations: Record<string, string>;
 
-    preSptLoad(container: DependencyContainer): void {
-        this.logger = container.resolve<ILogger>("WinstonLogger");
-        // container.register<QuestControllerExtension>("QuestControllerExtension", QuestControllerExtension);
-        // container.register("QuestController", {useToken: "QuestControllerExtension"});
-    }
-
     public postDBLoad(container: DependencyContainer): void {
+        // Setup logger
+        this.logger = container.resolve<ILogger>("WinstonLogger");
+        // Grab what we need from the server database
+        const tables: IDatabaseTables = container.resolve<DatabaseServer>("DatabaseServer").getTables();
+        const quests: Record<string, IQuest> = tables.templates.quests;
+        // Setup up our locales (change key to lower to avoid an issue with mismatched quest -> locale ids)
+        this.locale = {};
+        for (const localeId in tables.locales.global["en"]) {
+            this.locale[localeId.toLowerCase()] = tables.locales.global["en"][localeId];
+        }
+
+        // Load our mod config
         const vfs = container.resolve<VFS>("VFS");
         this.modConfig = jsonc.parse(vfs.readFile(path.resolve(__dirname, "../config/config.jsonc")));
 
+        // Load in the zones, as well as zones added by VCQL (TODO)
         this.zones = getZones(vfs, this.logger);
 
-        const databaseServer = container.resolve<DatabaseServer>("DatabaseServer");
-        const tables: IDatabaseTables = databaseServer.getTables();
-        this.maps = tables.locations;
-        this.locale = tables.locales.global["en"];
 
-        this.mapIdsToRemove = [];
+        // Setup our mapname to location dictionary
+        this.maps = {};
+        const mapKeys = Object.keys(tables.locations);
+        for (const i in mapKeys) {
+            const mapName = mapKeys[i];
+            if (mapName === "base" || mapName === "hideout") continue;
+            this.maps[mapName] = tables.locations[mapName];
+        }
 
-        // Loop through all the maps we have in config and make sure they exist...
-        this.modConfig.RemoveQuestsOnMaps.forEach(mapName => {
-            if (!(mapName in this.maps)) {
-                this.logger.error(`Unable to find map ${mapName}! Make sure you're spelling the map id correctly, see the config for valid entries.`);
-                return;
+        // Setup out mapId to name dict
+        this.mapIdToName = {};
+        for (const mapId in this.maps) {
+            let mapName = this.maps[mapId].base.Name.toLowerCase();
+
+            // Handle special cases
+            if (mapName === "sandbox") {
+                mapName = "ground zero";
+            } else if (mapName === "reservebase") {
+                mapName = "reserve";
             }
-            this.mapIdsToRemove.push((this.maps[mapName] as ILocation).base._Id);
-        });
-        this.logger.success("Found all maps in config!");
 
+            // Add our entry
+            this.mapIdToName[mapId] = mapName;
+        }
+        
 
-
+        // Initialize quest item to mapname linking before iterating over quests
         this.questItemLocations = {};
-        Mod.conditionsToSkip = [];
-        const quests: Record<string, IQuest> = tables.templates.quests;
+        // Initialize completed condition list before iterating over quests.
+        this.completedConditionIds = [];
         // Loop through quests
-        for (const questId in quests) {
-            const quest: IQuest = quests[questId];
-            //this.logger.success(`Quest: ${quest.QuestName}`);
-            quest.conditions.AvailableForFinish.forEach(condition => {
+        for (const i in quests) {
+            const quest: IQuest = quests[i];
 
+            let findItemCondition: IQuestCondition = undefined;
+            let leaveItemCondition: IQuestCondition = undefined;
+            
+            // Iterate over all quest conditions
+            for (const j in quest.conditions.AvailableForFinish) {
+                const condition = quest.conditions.AvailableForFinish[j];
+                if (condition.conditionType === "FindItem") {
+                    findItemCondition = condition;
+                } else if (condition.conditionType === "LeaveItemAtLocation") {
+                    leaveItemCondition = condition;
+                }
+                // Should complete condition also grabs info we need from the condition for questItemLocations
                 if (this.shouldCompleteCondition(condition)) {
+                    // Add condition id to our list
+                    this.completedConditionIds.push(condition.id.toLowerCase());
+                    // If it returns true then we want to set this condition as completed
                     this.completeCondition(condition);
                 }
+            }
 
-                return;
-                // if (condition.zoneId) {
-                //     if (!this.zoneExists(condition.zoneId)) {
-                //         this.logger.success(`Missing: ${condition.zoneId}`);
-                //     }
-                // }
-                const conditionText = this.locale[condition.id];
-                const conditionMap = this.getMapIdFromString(conditionText);
-                if (conditionMap !== undefined) {
-                    if (this.mapIdsToRemove.includes(conditionMap)) {
-                        this.logger.success(`Pushing ${quest.QuestName} condition for map ${conditionMap}`);
-                        Mod.conditionsToSkip.push(condition.id);
-                        if (typeof condition.value === "number") {
-                            condition.value = 0;
+            // TODO handle finditem and plantitem on differing maps (if one is "removed", then set both conditions to completed)
+            if (findItemCondition !== undefined && leaveItemCondition !== undefined) {
+                if (this.shouldCompleteCondition(leaveItemCondition)) {
+                    // check leave item condition for source item
+                    for (const j in leaveItemCondition.target as string[]) {
+                        const leftItem = leaveItemCondition.target[j];
+    
+                        if (findItemCondition.target.includes(leftItem) && !this.completedConditionIds.includes(findItemCondition.id)) {
+                            // set findItemCondition to completed
+                            this.completeCondition(findItemCondition);
                         }
                     }
                 }
-            });
+            }
         }
     }
 
     shouldCompleteCondition(condition: IQuestCondition): boolean {
         let hasMapName = false;
-        const conditionMap = this.getMapIdFromString(this.locale[condition.id]);
-        if (conditionMap !== undefined && this.mapIdsToRemove.includes(conditionMap)) {
+        const conditionMap = this.getMapNameFromConditionText(this.locale[condition.id.toLowerCase()]);
+        if (conditionMap !== undefined && this.modConfig.RemoveQuestsOnMaps.includes(conditionMap)) {
             hasMapName = true;
         }
         let shouldComplete = hasMapName;
+
+        if (!shouldComplete && condition.visibilityConditions?.length > 0) {
+            let allComplete = true;
+            for (const i in condition.visibilityConditions) {
+                const visCondition = condition.visibilityConditions[i];
+                if (!this.completedConditionIds.includes(visCondition.target)) {
+                    allComplete = false;
+                    break;
+                }
+            }
+            shouldComplete = allComplete;
+        }
+
+
         switch (condition.conditionType) {
-            case "Quest":
-            case "Skill":
-            case "WeaponAssembly":
-            case "TraderLoyalty":
-                break;
             case "CounterCreator":
                 // Counter creator's need checks as not all will be caught by name check (extract from location for example)
                 for (const i in condition.counter.conditions) {
                     const counterCondition = condition.counter.conditions[i];
                     if (counterCondition.conditionType === "Location") {
-                        let allMapsRemoved = true;
                         for (const j in counterCondition.target as string[]) {
-                            const targetMapName = counterCondition.target[j];
-                            const mapIdFound = this.getMapIdFromString(targetMapName);
-                            if (mapIdFound == undefined) {
-                                this.logger.error(`${targetMapName} could not be correlated to a map id`);
-                            } else if (!this.isMapIdRemoved(mapIdFound)) {
-                                allMapsRemoved = false;
+                            const targetMapId = counterCondition.target[j].toLowerCase();
+                            const isTargetMap = this.isMapName(this.getMapNameFromId(targetMapId));
+                            if (isTargetMap && this.modConfig.RemoveQuestsOnMaps.includes(this.getMapNameFromId(targetMapId))) {
+                                //this.logger.warning("Thing ");
+                                shouldComplete = true;
+                                break;
                             }
                         }
-
-                        if (allMapsRemoved) {
+                    } else if (counterCondition.conditionType === "VisitPlace") {
+                        const zoneMap = this.getMapNameFromZoneId(counterCondition.target as string);
+                        if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
                             shouldComplete = true;
+                            break;
                         }
                     }
                 }
@@ -138,7 +171,7 @@ export class Mod implements IPreSptLoadMod, IPostDBLoadMod {
                     // If the id is in our thingy mabober
                     if (targetId in this.questItemLocations) {
                         // and the map is forbidden 
-                        if (this.isMapIdRemoved(this.questItemLocations[targetId])) {
+                        if (this.modConfig.RemoveQuestsOnMaps.includes(this.questItemLocations[targetId])) {
                             shouldComplete = true;
                         }
                     }
@@ -151,8 +184,6 @@ export class Mod implements IPreSptLoadMod, IPostDBLoadMod {
                         const targetId = condition.target[i];
                         this.questItemLocations[targetId] = conditionMap;
                     }
-                } else {
-                    this.logger.error(`FindItem ${condition.id} doesn't have a map name associated?`);
                 }
                 break;
             case "LeaveItemAtLocation": {
@@ -164,19 +195,29 @@ export class Mod implements IPreSptLoadMod, IPostDBLoadMod {
                 for (const i in condition.target as string[]) {
                     const targetId = condition.target[i];
                     if (targetId in this.questItemLocations) {
-                        if (this.isMapIdRemoved(this.questItemLocations[targetId])) {
+                        if (this.modConfig.RemoveQuestsOnMaps.includes(this.questItemLocations[targetId])) {
                             shouldComplete = true;
                         }
                     }
                 }
 
-                const mapId = this.getMapIdFromZoneId(condition.zoneId);
-                if (this.isMapIdRemoved(mapId)) shouldComplete = true;
+                const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
+                if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
+                    shouldComplete = true;
+                }
                 break;
             }
-            case "PlaceBeacon":
-
+            case "PlaceBeacon": {
+                const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
+                if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
+                    shouldComplete = true;
+                }
                 break;
+            }
+            case "Quest":
+            case "Skill":
+            case "WeaponAssembly":
+            case "TraderLoyalty":
             default:
                 break;
         }
@@ -186,91 +227,45 @@ export class Mod implements IPreSptLoadMod, IPostDBLoadMod {
 
     completeCondition(condition: IQuestCondition): void {
         if (condition.conditionType == undefined) {
-            this.logger.error(`Condition ${condition.id} has no conditiontype???`);
             return;
         }
-
+        condition.value = 0;
     }
 
-    isMapIdRemoved(mapId: string): boolean {
-        return this.mapIdsToRemove.includes(mapId);
-    }
-
-    // zoneExists(zone: string) {
-    //     const mapNames = Object.keys(this.zones);
-    //     for (const i in mapNames) {
-    //         const mapName = mapNames[i];
-    //         if (this.zones[mapName].includes(zone)) return true;
-    //     }
-    //     return false;
-    // }
-
-    getMapIdFromName(name: string): string {
-        let mapId = "";
-
-        return mapId;
-    }
-
-    // These need to be better named
-    // convert from display name to shortname
-    // convert from shortname to _id
-
-    getMapFromConditionText(text: string): string {
-        return "";
-    }
-
-    getMapFromId(mapId: string): string {
-        return "";
-    }
-
-    getLocationByMapName(mapName: string): string {
-        
-    }
-
-    getMapIdFromString(text: string) {
-        const sep = text.split("on ");
-        text = sep[sep.length - 1].toLowerCase();
-        //let foundMaps = [];
-
-        const entries = Object.entries(this.maps);
-        let mapId = undefined;
-        entries.forEach(([key, value]) => {
-            if (key == "base" || key == "hideout" || key == "factory4_night" || key == "terminal") return;
-
-            const map: ILocation = value;
-
-            let mapName = map.base.Name.toLowerCase();
-            if (key == "sandbox" || key == "sandbox_high") {
-                mapName = "ground zero";
-            } else if (key == "reservebase") {
-                mapName = "reserve";
+    getMapNameFromConditionText(text: string): string | undefined {
+        for (const mapId in this.mapIdToName) {
+            const mapName = this.mapIdToName[mapId];
+            if (text.toLowerCase().indexOf(mapName) !== -1) {
+                return mapId;
             }
-
-            
-            if (text.indexOf(mapName) != -1) {
-                mapId = map.base._Id;
-                return;
-            }
-        });
-        
-        // if (foundMaps.length > 1) {
-        //     this.logger.error(`MORE THAN 1 MAP FOUND IN ${text}`);
-        //     foundMaps.forEach(val => {
-        //         this.logger.error(val);
-        //     })
-        // }
-        return mapId;
-    }
-
-    getMapIdFromZoneId(zoneId: string): string {
-        const mapNames = Object.keys(this.zones);
-        for (const i in mapNames) {
-            const mapName = mapNames[i];
-            if (this.zones[mapName].includes(zoneId)) return (this.maps[mapName] as ILocation).base._Id;
         }
-        this.logger.error(`${zoneId} doesn't have an associated map!`);
+        return undefined;
+    }
+
+    getMapNameFromId(mapId: string): string | undefined {
+        for (const mapName in this.maps) {
+            const mapInfo = this.getLocationByMapName(mapName);
+            if (mapInfo.base._Id === mapId) return mapName;
+        }
+        return undefined;
+    }
+
+    getLocationByMapName(mapName: string): ILocation | undefined {
+        return this.maps[mapName];
+    }
+
+    isMapName(mapName: string): boolean {
+        return mapName in this.maps;
+    }
+
+    getMapNameFromZoneId(zoneId: string): string {
+        for (const mapName in this.maps) {
+            if (this.zones[mapName]?.includes(zoneId)) {
+                return mapName;
+            }
+        }
         return undefined;
     }
 }
 
-export const mod = new Mod();
+export const mod = new FThatMap();

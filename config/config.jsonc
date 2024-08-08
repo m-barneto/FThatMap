@@ -1,6 +1,7 @@
 {
     // Possible map names:
     // customs ->           bigmap
+    // If you want to exclude factory, I recommend setting both day and night to removed
     // Factory ->           factory4_day
     // Factory ->           factory4_night
     // Interchange ->       interchange
