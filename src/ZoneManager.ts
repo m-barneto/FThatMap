@@ -19,34 +19,53 @@ export interface Zones {
 }
 
 
+interface ZoneFile {
+    ZoneId: string;
+    ZoneName: string;
+    ZoneLocation: string;
+    ZoneType: string;
+    FlareType: string;
+    Position: Position;
+    Rotation: Position;
+    Scale: Position;
+}
+
+interface Position {
+    X: string;
+    Y: string;
+    Z: string;
+    W: string;
+}
+
 
 const modsFolderPath = path.normalize(path.join(__dirname, "..", ".."));
 const vcqlZonesPath = "Virtual's Custom Quest Loader/database/zones/";
 
 
 
-function loadFiles(dirPath, extName, cb, logger: ILogger) {
-    logger.info(modsFolderPath);
+function loadFiles(dirPath, extName, cb) {
     if (!fs.existsSync(dirPath)) return;
-    logger.info(dirPath);
     const dir = fs.readdirSync(dirPath, { withFileTypes: true });
     dir.forEach(item => {
         const itemPath = path.normalize(`${dirPath}/${item.name}`);
-        logger.info(itemPath);
         if (item.isDirectory()) this.loadFiles(itemPath, extName, cb);
         else if (extName.includes(path.extname(item.name))) cb(itemPath);
     });
 }
 
-export function getZones(vfs: VFS, logger: ILogger): Zones {
+export function getZones(vfs: VFS, hasVcql: boolean): Zones {
     const zones: Zones = JSON.parse(vfs.readFile(path.join(__dirname, "..", "res/zones.json")));
-    const mapNames = Object.keys(zones);
-    // const zones = [];
-    // loadFiles(path.join(modPath, vcqlZonesPath), [".json"], function(filePath) {
-    //     const zoneFile = vfs.readFile(path.resolve(filePath));
-    //     logger.info(filePath);
-    //     if (Object.keys(zoneFile).length > 0)
-    //         zones.push(... zoneFile);
-    // }, logger);
+    if (!hasVcql) return zones;
+    
+    loadFiles(path.join(modsFolderPath, vcqlZonesPath), [".json"], function(filePath) {
+        const zoneFile = vfs.readFile(path.resolve(filePath));
+        const zoneJson = JSON.parse(zoneFile) as ZoneFile[];
+        for (const i in zoneJson) {
+            const zone = zoneJson[i];
+            if (zone.ZoneLocation.toLowerCase() in zones) {
+                zones[zone.ZoneLocation.toLowerCase()].push(zone.ZoneId);
+            }
+        }
+    });
     return zones;
 }

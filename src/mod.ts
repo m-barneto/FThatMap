@@ -10,6 +10,8 @@ import { ILogger } from "@spt/models/spt/utils/ILogger";
 import { IQuest, IQuestCondition } from "@spt/models/eft/common/tables/IQuest";
 import { getZones, Zones } from "./ZoneManager";
 import { IPostDBLoadMod } from "@spt/models/external/IPostDBLoadMod";
+import { PreSptModLoader } from "@spt/loaders/PreSptModLoader";
+import { LogTextColor } from "@spt/models/spt/logging/LogTextColor";
 
 interface ModConfig {
     RemoveQuestsOnMaps: string[];
@@ -24,6 +26,8 @@ export class FThatMap implements IPostDBLoadMod {
     private maps: Record<string, ILocation>;
     private mapIdToName: Record<string, string>;
     private completedConditionIds: string[];
+    private modifiedQuests: number;
+    private completedConditions: number;
 
     // Associate quest item ids with a location
     private questItemLocations: Record<string, string>;
@@ -44,9 +48,12 @@ export class FThatMap implements IPostDBLoadMod {
         const vfs = container.resolve<VFS>("VFS");
         this.modConfig = jsonc.parse(vfs.readFile(path.resolve(__dirname, "../config/config.jsonc")));
 
-        // Load in the zones, as well as zones added by VCQL (TODO)
-        this.zones = getZones(vfs, this.logger);
+        // Check if VCQL is loaded
+        const preSptModLoader = container.resolve<PreSptModLoader>("PreSptModLoader"); 
+        const hasVcqlLoaded = preSptModLoader.getImportedModsNames().includes("Virtual's Custom Quest Loader");
 
+        // Load in the zones, as well as zones added by VCQL (TODO)
+        this.zones = getZones(vfs, hasVcqlLoaded);
 
         // Setup our mapname to location dictionary
         this.maps = {};
@@ -73,6 +80,8 @@ export class FThatMap implements IPostDBLoadMod {
             this.mapIdToName[mapId] = mapName;
         }
         
+        // Initialize our counter
+        this.modifiedQuests = 0;
 
         // Initialize quest item to mapname linking before iterating over quests
         this.questItemLocations = {};
@@ -82,33 +91,41 @@ export class FThatMap implements IPostDBLoadMod {
         for (const i in quests) {
             const quest: IQuest = quests[i];
 
+            let modified = false;
+
             let findItemCondition: IQuestCondition = undefined;
             let leaveItemCondition: IQuestCondition = undefined;
             
             // Iterate over all quest conditions
             for (const j in quest.conditions.AvailableForFinish) {
                 const condition = quest.conditions.AvailableForFinish[j];
+
+                // Handle our linking of find and leave item conditions
                 if (condition.conditionType === "FindItem") {
                     findItemCondition = condition;
                 } else if (condition.conditionType === "LeaveItemAtLocation") {
                     leaveItemCondition = condition;
                 }
+
                 // Should complete condition also grabs info we need from the condition for questItemLocations
                 if (this.shouldCompleteCondition(condition)) {
-                    // Add condition id to our list
-                    this.completedConditionIds.push(condition.id.toLowerCase());
+                    modified = true;
                     // If it returns true then we want to set this condition as completed
                     this.completeCondition(condition);
+                    // Add condition id to our list
+                    this.completedConditionIds.push(condition.id.toLowerCase());
                 }
             }
 
-            // TODO handle finditem and plantitem on differing maps (if one is "removed", then set both conditions to completed)
+            // Handle finditem and plantitem on differing maps (if one is "removed", then set both conditions to completed)
             if (findItemCondition !== undefined && leaveItemCondition !== undefined) {
+                // So we only care about completing find item because leave item gets handled properly by tracking finditem's target item
                 if (this.shouldCompleteCondition(leaveItemCondition)) {
                     // check leave item condition for source item
                     for (const j in leaveItemCondition.target as string[]) {
                         const leftItem = leaveItemCondition.target[j];
-    
+                        
+                        // If the find item is targetting our left item, and it's not on a removed map, complete the condition anyways (if it's on a removed map it would've already been completed)
                         if (findItemCondition.target.includes(leftItem) && !this.completedConditionIds.includes(findItemCondition.id)) {
                             // set findItemCondition to completed
                             this.completeCondition(findItemCondition);
@@ -116,41 +133,63 @@ export class FThatMap implements IPostDBLoadMod {
                     }
                 }
             }
+
+            // Increment our counter if quest was modified.
+            if (modified) {
+                this.modifiedQuests++;
+            }
         }
+
+        // Print our loaded message
+        this.logger.logWithColor(`Skipped ${this.completedConditionIds.length} quest conditions. Spanning a total of ${this.modifiedQuests} quests!`, LogTextColor.CYAN);
     }
 
+    /**
+     * Check if a condition needs to be completed.
+     * @param condition indentified for completion
+     * @returns 
+     */
     shouldCompleteCondition(condition: IQuestCondition): boolean {
-        let hasMapName = false;
+        // Use the condition's locale to see if it contains a map name
         const conditionMap = this.getMapNameFromConditionText(this.locale[condition.id.toLowerCase()]);
+        // If it does, then set hasMapName to true, that way it can be utilized in lower sections to correlate other info from the condition
+        // If we just returned true here, we'd miss some edge cases related to quest items
+        let hasMapName = false;
         if (conditionMap !== undefined && this.modConfig.RemoveQuestsOnMaps.includes(conditionMap)) {
             hasMapName = true;
         }
-        let shouldComplete = hasMapName;
+        
 
+        let shouldComplete = hasMapName;
+        // If we aren't already completing this condition, look at the conditions visibility conditions
         if (!shouldComplete && condition.visibilityConditions?.length > 0) {
+            // Go through each vis condition and if any of them aren't completed, we want allComplete to be false
             let allComplete = true;
             for (const i in condition.visibilityConditions) {
                 const visCondition = condition.visibilityConditions[i];
+                // If the vis condition isn't completed, we want to set allComplete to false and break the loop
                 if (!this.completedConditionIds.includes(visCondition.target)) {
                     allComplete = false;
                     break;
                 }
             }
+            // If all vis conditions are completed, we want to complete this condition
             shouldComplete = allComplete;
         }
 
-
+        // Big ole switch case (just neater than having a ton of if else statements imo)
         switch (condition.conditionType) {
             case "CounterCreator":
                 // Counter creator's need checks as not all will be caught by name check (extract from location for example)
                 for (const i in condition.counter.conditions) {
                     const counterCondition = condition.counter.conditions[i];
+                    // If it's of type location
                     if (counterCondition.conditionType === "Location") {
+                        // Go through the list of available locations and if they're all removed, complete the condition
                         for (const j in counterCondition.target as string[]) {
                             const targetMapId = counterCondition.target[j].toLowerCase();
                             const isTargetMap = this.isMapName(this.getMapNameFromId(targetMapId));
                             if (isTargetMap && this.modConfig.RemoveQuestsOnMaps.includes(this.getMapNameFromId(targetMapId))) {
-                                //this.logger.warning("Thing ");
                                 shouldComplete = true;
                                 break;
                             }
@@ -187,33 +226,38 @@ export class FThatMap implements IPostDBLoadMod {
                 }
                 break;
             case "LeaveItemAtLocation": {
-                // If it has mapname, cancel it
-                
-                // Also check if the associated maps are on the list and cancel it if so
-                //const sourceMapId = this.questItemLocations[condition.target]
+                // Check if the associated maps are on the list and cancel it if so
                 // Go through the targets
                 for (const i in condition.target as string[]) {
                     const targetId = condition.target[i];
+                    // If our target item id is in our dict
                     if (targetId in this.questItemLocations) {
+                        // Check if we want to skip based on the map it comes from
                         if (this.modConfig.RemoveQuestsOnMaps.includes(this.questItemLocations[targetId])) {
                             shouldComplete = true;
+                            break;
                         }
                     }
                 }
 
+                // Get the map and base complete on that
                 const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
                 if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
                     shouldComplete = true;
+                    break;
                 }
                 break;
             }
             case "PlaceBeacon": {
+                // Find out the map associated with the target zone id
                 const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
+                // If we want to complete the conditon
                 if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
                     shouldComplete = true;
                 }
                 break;
             }
+            // We don't have to do anything to these, but I want to leave these here to represent all possible condition types
             case "Quest":
             case "Skill":
             case "WeaponAssembly":
@@ -225,6 +269,10 @@ export class FThatMap implements IPostDBLoadMod {
         return shouldComplete;
     }
 
+    /**
+     * Completes a condition for a quest
+     * @param condition condition to complete
+     */
     completeCondition(condition: IQuestCondition): void {
         if (condition.conditionType == undefined) {
             return;
@@ -232,6 +280,11 @@ export class FThatMap implements IPostDBLoadMod {
         condition.value = 0;
     }
 
+    /**
+     * Extracts a map id from a string that contains a map name
+     * @param text The condition's locale text
+     * @returns A map id or undefined if no map is found
+     */
     getMapNameFromConditionText(text: string): string | undefined {
         for (const mapId in this.mapIdToName) {
             const mapName = this.mapIdToName[mapId];
@@ -242,22 +295,32 @@ export class FThatMap implements IPostDBLoadMod {
         return undefined;
     }
 
+    /**
+     * Gets the display name of a map based on it's id
+     * @param mapId The map id to get the display name of
+     * @returns map display name
+     */
     getMapNameFromId(mapId: string): string | undefined {
         for (const mapName in this.maps) {
-            const mapInfo = this.getLocationByMapName(mapName);
-            if (mapInfo.base._Id === mapId) return mapName;
+            if (this.maps[mapName].base._Id === mapId) return mapName;
         }
         return undefined;
     }
 
-    getLocationByMapName(mapName: string): ILocation | undefined {
-        return this.maps[mapName];
-    }
-
+    /**
+     * Check if a string is a valid map name
+     * @param mapName Map name to check
+     * @returns true if it's a valid map name
+     */
     isMapName(mapName: string): boolean {
         return mapName in this.maps;
     }
 
+    /**
+     * Get the map associated with a zone
+     * @param zoneId to search for
+     * @returns a valid map name
+     */
     getMapNameFromZoneId(zoneId: string): string {
         for (const mapName in this.maps) {
             if (this.zones[mapName]?.includes(zoneId)) {
