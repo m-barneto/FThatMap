@@ -16,7 +16,6 @@
     "RemoveQuestsOnMaps": [
         "tarkovstreets",
         "sandbox",
-        "sandbox_high",
-        "bigmap"
+        "sandbox_high"
     ]
 }
