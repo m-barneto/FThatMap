@@ -150,8 +150,15 @@ export class FThatMap implements IPostDBLoadMod {
      * @returns 
      */
     shouldCompleteCondition(condition: IQuestCondition): boolean {
+        // Get locale
+        const conditionText = this.locale[condition.id.toLowerCase()];
+        // If no condition text was found, log an error and return false.
+        if (conditionText === undefined) {
+            this.logger.error(`Error finding locale for condition id ${condition.id}! Please report this!`);
+            return false;
+        }
         // Use the condition's locale to see if it contains a map name
-        const conditionMap = this.getMapNameFromConditionText(this.locale[condition.id.toLowerCase()]);
+        const conditionMap = this.getMapNameFromConditionText(conditionText);
         // If it does, then set hasMapName to true, that way it can be utilized in lower sections to correlate other info from the condition
         // If we just returned true here, we'd miss some edge cases related to quest items
         let hasMapName = false;
