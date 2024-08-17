@@ -28,11 +28,13 @@ export class FThatMap implements IPostDBLoadMod {
     private completedConditionIds: string[];
     private modifiedQuests: number;
     private completedConditions: number;
+    private debug: boolean;
 
     // Associate quest item ids with a location
     private questItemLocations: Record<string, string>;
 
     public postDBLoad(container: DependencyContainer): void {
+        this.debug = false;
         // Setup logger
         this.logger = container.resolve<ILogger>("WinstonLogger");
         // Grab what we need from the server database
@@ -79,6 +81,15 @@ export class FThatMap implements IPostDBLoadMod {
             // Add our entry
             this.mapIdToName[mapId] = mapName;
         }
+
+        // Print out the configured maps if debugging
+        if (this.debug) {
+            this.logger.info(`[FThatMap] Configured Maps`)
+            for (const i in this.modConfig.RemoveQuestsOnMaps) {
+                const mapName = this.modConfig.RemoveQuestsOnMaps[i];
+                this.logger.info(`[FThatMap] ${mapName}`);
+            }
+        }
         
         // Initialize our counter
         this.modifiedQuests = 0;
@@ -87,14 +98,22 @@ export class FThatMap implements IPostDBLoadMod {
         this.questItemLocations = {};
         // Initialize completed condition list before iterating over quests.
         this.completedConditionIds = [];
+        
         // Loop through quests
         for (const i in quests) {
             const quest: IQuest = quests[i];
+
+            if (this.debug) {
+                this.logger.error(`[FThatMap] ${quest.QuestName}`);
+            }
 
             let modified = false;
 
             let findItemCondition: IQuestCondition = undefined;
             let leaveItemCondition: IQuestCondition = undefined;
+
+            // Keep track of previous condition
+            let prevCondition = undefined;
             
             // Iterate over all quest conditions
             for (const j in quest.conditions.AvailableForFinish) {
@@ -108,19 +127,27 @@ export class FThatMap implements IPostDBLoadMod {
                 }
 
                 // Should complete condition also grabs info we need from the condition for questItemLocations
-                if (this.shouldCompleteCondition(condition)) {
+                if (this.shouldCompleteCondition(prevCondition, condition)) {
                     modified = true;
                     // If it returns true then we want to set this condition as completed
                     this.completeCondition(condition);
                     // Add condition id to our list
                     this.completedConditionIds.push(condition.id.toLowerCase());
+
+                    if (this.debug) {
+                        this.logger.success(`[FThatMap] ${this.locale[condition.id]}`);
+                    }
+                } else if (this.debug) {
+                    this.logger.warning(`[FThatMap] ${this.locale[condition.id]}`);
                 }
+
+                prevCondition = condition;
             }
 
             // Handle finditem and plantitem on differing maps (if one is "removed", then set both conditions to completed)
             if (findItemCondition !== undefined && leaveItemCondition !== undefined) {
                 // So we only care about completing find item because leave item gets handled properly by tracking finditem's target item
-                if (this.shouldCompleteCondition(leaveItemCondition)) {
+                if (this.shouldCompleteCondition(undefined, leaveItemCondition)) {
                     // check leave item condition for source item
                     for (const j in leaveItemCondition.target as string[]) {
                         const leftItem = leaveItemCondition.target[j];
@@ -149,7 +176,7 @@ export class FThatMap implements IPostDBLoadMod {
      * @param condition indentified for completion
      * @returns 
      */
-    shouldCompleteCondition(condition: IQuestCondition): boolean {
+    shouldCompleteCondition(prevCondition: IQuestCondition, condition: IQuestCondition): boolean {
         // Get locale
         const conditionText = this.locale[condition.id.toLowerCase()];
         // If no condition text was found, log an error and return false.
@@ -224,13 +251,36 @@ export class FThatMap implements IPostDBLoadMod {
                 }
                 break;
             case "FindItem":
-                // If it has mapname, associate the item with that location
-                if (hasMapName) {
-                    for (const i in condition.target as string[]) {
-                        const targetId = condition.target[i];
-                        this.questItemLocations[targetId] = conditionMap;
+                let prevHasMapName = false;
+                let prevConditionMap = "";
+                if (prevCondition !== undefined && prevCondition.conditionType === "CounterCreator") {
+                    let subCondition = prevCondition.counter.conditions[0];
+                    if (subCondition !== undefined && subCondition.conditionType === "VisitPlace") {
+                        if (this.shouldCompleteCondition(undefined, prevCondition)) {
+                            // Get the map and base complete on that
+                            const zoneId = subCondition.target as string;
+                            prevConditionMap = this.getMapNameFromZoneId(zoneId);
+
+                            if (this.modConfig.RemoveQuestsOnMaps.includes(prevConditionMap)) {
+                                prevHasMapName = true;
+                            }
+                        }
                     }
                 }
+                // If it has mapname, associate the item with that location
+                for (const i in condition.target as string[]) {
+                    const targetId = condition.target[i];
+
+                    if (hasMapName) {
+                        this.questItemLocations[targetId] = conditionMap;
+                    } else if (prevHasMapName) {
+                        this.questItemLocations[targetId] = prevConditionMap;
+                    }
+                }
+
+                shouldComplete = shouldComplete || prevHasMapName;
+
+                
                 break;
             case "LeaveItemAtLocation": {
                 // Check if the associated maps are on the list and cancel it if so
