@@ -168,7 +168,7 @@ export class FThatMap implements IPostDBLoadMod {
         }
 
         // Print our loaded message
-        this.logger.logWithColor(`Skipped ${this.completedConditionIds.length} quest conditions. Spanning a total of ${this.modifiedQuests} quests!`, LogTextColor.CYAN);
+        this.logger.logWithColor(`[FThatMap] Skipped ${this.completedConditionIds.length} quest conditions. Spanning a total of ${this.modifiedQuests} quests!`, LogTextColor.CYAN);
     }
 
     /**
@@ -179,14 +179,14 @@ export class FThatMap implements IPostDBLoadMod {
     shouldCompleteCondition(prevCondition: IQuestCondition, condition: IQuestCondition): boolean {
         // Check if condition id is present (IT SHOULD BE?)
         if (condition.id === undefined) {
-            this.logger.error("Error with condition. Idk how to identify this condition to tell you because it's condition ID is undefined!");
+            this.logger.error("[FThatMap] Error with condition. Idk how to identify this condition to tell you because it's condition ID is undefined!");
             return false;
         }
         // Get locale
         const conditionText = this.locale[condition.id.toLowerCase()];
         // If no condition text was found, log an error and return false.
         if (conditionText === undefined) {
-            this.logger.error(`Error finding locale for condition id ${condition.id}! Please report this!`);
+            this.logger.error(`[FThatMap] Error finding locale for condition id ${condition.id}! Please report this!`);
             return false;
         }
         // Use the condition's locale to see if it contains a map name
