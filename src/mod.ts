@@ -177,6 +177,11 @@ export class FThatMap implements IPostDBLoadMod {
      * @returns 
      */
     shouldCompleteCondition(prevCondition: IQuestCondition, condition: IQuestCondition): boolean {
+        // Check if condition id is present (IT SHOULD BE?)
+        if (condition.id === undefined) {
+            this.logger.error("Error with condition. Idk how to identify this condition to tell you because it's condition ID is undefined!");
+            return false;
+        }
         // Get locale
         const conditionText = this.locale[condition.id.toLowerCase()];
         // If no condition text was found, log an error and return false.
