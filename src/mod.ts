@@ -34,7 +34,7 @@ export class FThatMap implements IPostDBLoadMod {
     private questItemLocations: Record<string, string>;
 
     public postDBLoad(container: DependencyContainer): void {
-        this.debug = false;
+        this.debug = true;
         // Setup logger
         this.logger = container.resolve<ILogger>("WinstonLogger");
         // Grab what we need from the server database
