@@ -84,7 +84,7 @@ export class FThatMap implements IPostDBLoadMod {
 
         // Print out the configured maps if debugging
         if (this.debug) {
-            this.logger.info(`[FThatMap] Configured Maps`)
+            this.logger.info("[FThatMap] Configured Maps")
             for (const i in this.modConfig.RemoveQuestsOnMaps) {
                 const mapName = this.modConfig.RemoveQuestsOnMaps[i];
                 this.logger.info(`[FThatMap] ${mapName}`);
@@ -250,11 +250,12 @@ export class FThatMap implements IPostDBLoadMod {
                     }
                 }
                 break;
-            case "FindItem":
+            case "FindItem": {
+                
                 let prevHasMapName = false;
                 let prevConditionMap = "";
                 if (prevCondition !== undefined && prevCondition.conditionType === "CounterCreator") {
-                    let subCondition = prevCondition.counter.conditions[0];
+                    const subCondition = prevCondition.counter.conditions[0];
                     if (subCondition !== undefined && subCondition.conditionType === "VisitPlace") {
                         if (this.shouldCompleteCondition(undefined, prevCondition)) {
                             // Get the map and base complete on that
@@ -282,6 +283,7 @@ export class FThatMap implements IPostDBLoadMod {
 
                 
                 break;
+            }
             case "LeaveItemAtLocation": {
                 // Check if the associated maps are on the list and cancel it if so
                 // Go through the targets
