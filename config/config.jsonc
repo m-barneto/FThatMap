@@ -1,4 +1,5 @@
 {
+    "debug": false,
     // Possible map names:
     // customs ->           bigmap
     // If you want to exclude factory, I recommend setting both day and night to removed
@@ -13,7 +14,7 @@
     // Streets ->           tarkovstreets
     // Ground Zero ->       sandbox
     // Ground Zero 21+ ->   sandbox_high
-    "RemoveQuestsOnMaps": [
+    "removeQuestsOnMaps": [
         "tarkovstreets",
         "sandbox",
         "sandbox_high"

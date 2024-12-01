@@ -14,7 +14,8 @@ import { PreSptModLoader } from "@spt/loaders/PreSptModLoader";
 import { LogTextColor } from "@spt/models/spt/logging/LogTextColor";
 
 interface ModConfig {
-    RemoveQuestsOnMaps: string[];
+    debug: boolean;
+    removeQuestsOnMaps: string[];
 }
 
 export class FThatMap implements IPostDBLoadMod {
@@ -34,7 +35,7 @@ export class FThatMap implements IPostDBLoadMod {
     private questItemLocations: Record<string, string>;
 
     public postDBLoad(container: DependencyContainer): void {
-        this.debug = true;
+        this.debug = false;
         // Setup logger
         this.logger = container.resolve<ILogger>("WinstonLogger");
         // Grab what we need from the server database
@@ -85,8 +86,8 @@ export class FThatMap implements IPostDBLoadMod {
         // Print out the configured maps if debugging
         if (this.debug) {
             this.logger.info("[FThatMap] Configured Maps")
-            for (const i in this.modConfig.RemoveQuestsOnMaps) {
-                const mapName = this.modConfig.RemoveQuestsOnMaps[i];
+            for (const i in this.modConfig.removeQuestsOnMaps) {
+                const mapName = this.modConfig.removeQuestsOnMaps[i];
                 this.logger.info(`[FThatMap] ${mapName}`);
             }
         }
@@ -186,7 +187,9 @@ export class FThatMap implements IPostDBLoadMod {
         const conditionText = this.locale[condition.id.toLowerCase()];
         // If no condition text was found, log an error and return false.
         if (conditionText === undefined) {
-            this.logger.error(`[FThatMap] Error finding locale for condition id ${condition.id}! Please report this!`);
+            if (this.modConfig.debug) {
+                this.logger.error(`[FThatMap] Error finding locale for condition id ${condition.id}! Please report this!`);
+            }
             return false;
         }
         // Use the condition's locale to see if it contains a map name
@@ -194,7 +197,7 @@ export class FThatMap implements IPostDBLoadMod {
         // If it does, then set hasMapName to true, that way it can be utilized in lower sections to correlate other info from the condition
         // If we just returned true here, we'd miss some edge cases related to quest items
         let hasMapName = false;
-        if (conditionMap !== undefined && this.modConfig.RemoveQuestsOnMaps.includes(conditionMap)) {
+        if (conditionMap !== undefined && this.modConfig.removeQuestsOnMaps.includes(conditionMap)) {
             hasMapName = true;
         }
         
@@ -228,14 +231,14 @@ export class FThatMap implements IPostDBLoadMod {
                         for (const j in counterCondition.target as string[]) {
                             const targetMapId = counterCondition.target[j].toLowerCase();
                             const isTargetMap = this.isMapName(this.getMapNameFromId(targetMapId));
-                            if (isTargetMap && this.modConfig.RemoveQuestsOnMaps.includes(this.getMapNameFromId(targetMapId))) {
+                            if (isTargetMap && this.modConfig.removeQuestsOnMaps.includes(this.getMapNameFromId(targetMapId))) {
                                 shouldComplete = true;
                                 break;
                             }
                         }
                     } else if (counterCondition.conditionType === "VisitPlace") {
                         const zoneMap = this.getMapNameFromZoneId(counterCondition.target as string);
-                        if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
+                        if (this.modConfig.removeQuestsOnMaps.includes(zoneMap)) {
                             shouldComplete = true;
                             break;
                         }
@@ -249,7 +252,7 @@ export class FThatMap implements IPostDBLoadMod {
                     // If the id is in our thingy mabober
                     if (targetId in this.questItemLocations) {
                         // and the map is forbidden 
-                        if (this.modConfig.RemoveQuestsOnMaps.includes(this.questItemLocations[targetId])) {
+                        if (this.modConfig.removeQuestsOnMaps.includes(this.questItemLocations[targetId])) {
                             shouldComplete = true;
                         }
                     }
@@ -267,7 +270,7 @@ export class FThatMap implements IPostDBLoadMod {
                             const zoneId = subCondition.target as string;
                             prevConditionMap = this.getMapNameFromZoneId(zoneId);
 
-                            if (this.modConfig.RemoveQuestsOnMaps.includes(prevConditionMap)) {
+                            if (this.modConfig.removeQuestsOnMaps.includes(prevConditionMap)) {
                                 prevHasMapName = true;
                             }
                         }
@@ -297,7 +300,7 @@ export class FThatMap implements IPostDBLoadMod {
                     // If our target item id is in our dict
                     if (targetId in this.questItemLocations) {
                         // Check if we want to skip based on the map it comes from
-                        if (this.modConfig.RemoveQuestsOnMaps.includes(this.questItemLocations[targetId])) {
+                        if (this.modConfig.removeQuestsOnMaps.includes(this.questItemLocations[targetId])) {
                             shouldComplete = true;
                             break;
                         }
@@ -306,7 +309,7 @@ export class FThatMap implements IPostDBLoadMod {
 
                 // Get the map and base complete on that
                 const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
-                if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
+                if (this.modConfig.removeQuestsOnMaps.includes(zoneMap)) {
                     shouldComplete = true;
                     break;
                 }
@@ -316,7 +319,7 @@ export class FThatMap implements IPostDBLoadMod {
                 // Find out the map associated with the target zone id
                 const zoneMap = this.getMapNameFromZoneId(condition.zoneId);
                 // If we want to complete the conditon
-                if (this.modConfig.RemoveQuestsOnMaps.includes(zoneMap)) {
+                if (this.modConfig.removeQuestsOnMaps.includes(zoneMap)) {
                     shouldComplete = true;
                 }
                 break;
